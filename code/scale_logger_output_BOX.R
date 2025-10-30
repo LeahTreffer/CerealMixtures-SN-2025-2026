@@ -6,6 +6,8 @@
 # files stored on BOX: https://cornell.box.com/s/xly2hq92e6qt1lbzewc7viy3junnvz4k
 # BOX dosn't have file paths like other repositories, so can't just call the files from thier folder, have to have thier specific BOX id
 
+# First, run BOX.R to connect R to BOX (should only ever have to do this once)
+
 # Load in functions
 library(boxr)
 library(readr)
