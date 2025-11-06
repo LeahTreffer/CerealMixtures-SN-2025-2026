@@ -1,5 +1,22 @@
-crop_n_rotate <- function(x){
+crop_and_rotate <- function(x, directory = NULL){
   require(EBImage)
+  require(tiff)
+  require(stringr)
+  require(exifr)
+  require(lubridate)
+  # obtain file metadata to get date
+  get_metadata <- read_exif(x)
+  
+  filename <- str_split_i(x, pattern = "/", i = -1)
+  no_suffix <- str_split_i(filename, pattern = "\\.", i = 1)
+  pth <- str_sub(x, end = -(nchar(filename)+1))
+  
+  if (is.null(directory)){
+    path_to_use = pth
+  } else {
+    path_to_use = directory
+  }
+  
   img <- readImage(x, all = TRUE)
   # find center coordinates
   dims_orig <- dim(img)
@@ -59,7 +76,21 @@ crop_n_rotate <- function(x){
   
   # perform crop 
   img_cropped <- img_rotated[min(points_translated$x_trans):max(points_translated$x_trans), min(points_translated$y_trans):max(points_translated$y_trans),]
+  # saved image path
+  create_date_time <- get_metadata$FileModifyDate |> lubridate::ymd_hms()
   
-  display(img_cropped[,,3], method = "raster")
-  return(img_rotated)
+  # CR = cropped, rotated
+  img_name <- paste(path_to_use, no_suffix, "_CR_", create_date_time, ".tif", sep = "")
+  cat("Attempting to save to:", img_name, "\n")
+
+  print(path_to_use)
+  print(no_suffix)
+  print(create_date_time)
+  cat(str(img_cropped))
+  
+  # set color mode so images are written in correct stack order
+  colorMode(img_cropped) <- 2
+  writeImage(img_cropped, img_name)
+
 }
+
