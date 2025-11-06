@@ -1,4 +1,4 @@
-crop_and_rotate <- function(x, directory = NULL){
+crop_and_rotate <- function(x, directory = NULL, display_scale = 0.25){
   require(EBImage)
   require(tiff)
   require(stringr)
@@ -17,16 +17,29 @@ crop_and_rotate <- function(x, directory = NULL){
     path_to_use = directory
   }
   
-  img <- readImage(x, all = TRUE)
+  img_array <- readTIFF(x, native = FALSE, convert = TRUE)
+  print(dim(img_array))
+  
+  # Convert to EBImage object
+  img <- Image(img_array, colormode = "Color")
+  
+  # img <- readImage(x, all = TRUE)
   # find center coordinates
   dims_orig <- dim(img)
   
   cx_original <- dims_orig[[1]]/2
   cy_original <- dims_orig[[2]]/2
   
+  rgb_im <- EBImage::rgbImage(img[,,1], img[,,2], img[,,3])
+  img_display <- resize(rgb_im, w = dims_orig[1] * display_scale,
+                        h = dims_orig[2] * display_scale)
+  dims_display <- dim(img_display)
+  
+  cx_display <- dims_display[[1]]/2
+  cy_display <- dims_display[[2]]/2
   repeat{
     dev.new(height = 7, width = 8, units = "in")
-    plot(rgbImage(img[,,1], img[,,2], img[,,3]))
+    plot(img_display)
     cat("Beginning in what should be the top left corner if the\n rhizobox were upright, click clockwise around the box\n")
     pts <- locator(4)
     
@@ -38,10 +51,24 @@ crop_and_rotate <- function(x, directory = NULL){
       break
     } else if (happiness_question != "n"){
       cat("Only y or n please!")
+      dev.off()
     }
     
   }
+  
+  # Scale points back to full resolution
+  scale_factor <- 1 / display_scale
+  pts$x <- pts$x * scale_factor
+  pts$y <- pts$y * scale_factor
+  
+  # Free display image
+  rm(img_display)
+  gc()
+  
   # Calculate angles from multiple edges 
+  
+  # load in image again
+  img_full <- readImage(x, all = TRUE)
   
   top_angle <- atan2(pts$y[2] - pts$y[1], pts$x[2] - pts$x[1])
   bottom_angle <- atan2(pts$y[3] - pts$y[4], pts$x[3] - pts$x[4])
@@ -62,6 +89,9 @@ crop_and_rotate <- function(x, directory = NULL){
   # Rotate all channels
   img_rotated <- rotate(img, angle, bg.col = "black")
   
+  rm(img)
+  gc()
+  
   dims_rotated <- dim(img_rotated)
   cx_rotated <- dims_rotated[[1]]/2
   cy_rotated <- dims_rotated[[2]]/2
@@ -76,6 +106,9 @@ crop_and_rotate <- function(x, directory = NULL){
   
   # perform crop 
   img_cropped <- img_rotated[min(points_translated$x_trans):max(points_translated$x_trans), min(points_translated$y_trans):max(points_translated$y_trans),]
+  rm(img_rotated)
+  gc()
+  
   # saved image path
   create_date_time <- get_metadata$FileModifyDate |> lubridate::ymd_hms()
   
@@ -91,6 +124,8 @@ crop_and_rotate <- function(x, directory = NULL){
   # set color mode so images are written in correct stack order
   colorMode(img_cropped) <- 2
   writeImage(img_cropped, img_name)
+  rm(img_cropped)
+  gc()
 
 }
 
