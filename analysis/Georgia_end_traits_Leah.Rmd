@@ -1,0 +1,536 @@
+---
+title: "Georgia_root_lengths_Leah"
+author: "Leah Treffer"
+date: "2025-11-17"
+output: html_document
+---
+
+Quick analysis for Alex
+
+Are there differences between treatments, ratios, species
+Do we need three water treatments
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(boxr)
+library(readr)
+library(readxl)
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(lmerTest)
+library(emmeans)
+library(multcomp)
+```
+
+```{r eval=FALSE, include=FALSE}
+#Cereal Mixtures 2025 folder id : 326957031709
+box_auth(client_id = "bamza65junx3iksnkq2jyo8dc4xo5aok", client_secret = "Guj1WmaR4rC6FckY1TAbFWVUTNWC4lCb")
+box_ls(326957031709)
+```
+
+
+```{r}
+# Georgia Data sheet file id: 2001945973910
+# Biomass data sheet file id: 2050198667244
+data <- box_read_excel(2001945973910, sheet = "Subplot level data sheet")
+biomass <- box_read_excel(2050198667244)
+```
+
+# Root length at termination 
+
+```{r}
+# get just useful columns 
+data_root <- data[,c("Plot", "Subplot_ID", "Ratio","Subplot_species","Treatment", "Rep", "FinalRootLength")]
+data_root <- data_root[c(1:180),]
+
+data_root$Plot <- as.character(data_root$Plot)
+data_root$Subplot_ID <- as.character(data_root$Subplot_ID)
+data_root$Ratio <- as.factor(data_root$Ratio)
+data_root$Subplot_species <- as.factor(data_root$Subplot_species)
+data_root$Treatment <- as.factor(data_root$Treatment)
+data_root$Rep <- as.factor(data_root$Rep)
+data_root$FinalRootLength <- as.numeric(data_root$FinalRootLength)
+```
+
+```{r}
+plot(data_root$Ratio, data_root$FinalRootLength)
+```
+
+```{r}
+ggplot(data_root, aes(x = Ratio,
+                      y = FinalRootLength,
+                      color = Subplot_species)) +
+  geom_point(size = 3) +
+  geom_line(aes(group = Subplot_species), size = 1.1) +
+  labs(
+    x = "Barley : Wheat plants in pot",
+    y = "Final Root Length",
+    title = "Replacement Series Plot",
+    color = "Species"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+
+data_root2 <- data_root %>%
+  separate(Subplot_ID, into = c("pot", "plant"), sep = "\\.", convert = TRUE)
+
+data_root2 <- data_root2 %>%
+  group_by(pot) %>%
+  arrange(plant) %>%                      # ensure correct order
+  mutate(Length_flipped = rev(FinalRootLength)) %>%   # reverse the values
+  ungroup()
+```
+
+```{r}
+ggplot(data_root2, aes(x = Ratio,
+                      y = Length_flipped,
+                      color = Subplot_species)) +
+  geom_point(size = 3) +
+  geom_line(aes(group = Subplot_species), size = 1.1) +
+  labs(
+    x = "Barley : Wheat plants in pot",
+    y = "Final Root Length",
+    title = "Replacement Series Plot",
+    color = "Species"
+  ) +
+  theme_minimal(base_size = 14)
+```
+
+```{r}
+model1 <- lmerTest::lmer(Length_flipped ~  Subplot_species + Treatment + (1|Ratio) + (1|Rep), data = data_root2)
+
+model2 <- lmerTest::lmer(Length_flipped ~  Subplot_species + Treatment + Ratio + (1|Rep), data = data_root2)
+
+model3 <- lmerTest::lmer(Length_flipped ~  Subplot_species * Treatment + Ratio + (1|Rep), data = data_root2)
+
+model4 <- lmerTest::lmer(Length_flipped ~  Subplot_species * Treatment + (1|Ratio) + (1|Rep), data = data_root2)
+
+model5 <- lmerTest::lmer(Length_flipped ~  Subplot_species * Treatment + Ratio * Treatment + (1|Rep), data = data_root2)
+
+model6 <- lmerTest::lmer(Length_flipped ~  Subplot_species * Treatment * Ratio + (1|Rep), data = data_root2)
+
+AIC(model1, model2,model3,model4,model5,model6)
+
+anova(model3,model5)
+```
+
+```{r}
+model_root <- lmerTest::lmer(Length_flipped ~  Subplot_species * Treatment * Ratio + (1|Rep), data = data_root2)
+summary(model_root)
+
+#Does root length differ between species within each treatment
+emmeans(model_root, pairwise ~ Subplot_species | Treatment) 
+#Does root length differ between planting ratios within each treatment
+emmeans(model_root, pairwise ~ Ratio | Treatment) 
+#Does root length differ between species within ratio and treatment
+emmeans(model_root, pairwise ~ Subplot_species | Ratio * Treatment) 
+
+#Does root length differ between Treatment
+emmeans(model_root, pairwise ~ Treatment | Ratio * Subplot_species) 
+
+```
+
+# Biomass
+
+```{r}
+meta <- data[,c("Plot", "Ratio", "Treatment", "Rep")]
+meta <- unique(meta)
+
+biomass2 <- left_join(biomass, meta, by = "Plot")
+biomass2 <- biomass2[,c("Plot", "Ratio", "Treatment", "Rep", "Species", "Type", "Weight_g")]
+
+biomass2$Plot <- as.character(biomass2$Plot)
+biomass2$Ratio <- as.factor(biomass2$Ratio)
+biomass2$Treatment <- as.factor(biomass2$Treatment)
+biomass2$Rep <- as.factor(biomass2$Rep)
+biomass2$Species <- as.factor(biomass2$Species)
+biomass2$Type <- as.factor(biomass2$Type)
+biomass2$Weight_g <- as.numeric(biomass2$Weight_g)
+
+biomass3 <- pivot_wider(biomass2,names_from = "Type", values_from = "Weight_g")
+```
+
+```{r}
+qqnorm(biomass3$above)
+qqline(biomass3$above)
+qqnorm(sqrt(biomass3$above))
+qqline(sqrt(biomass3$above))
+qqnorm(log(biomass3$above))
+qqline(log(biomass3$above))
+
+qqnorm(biomass3$below)
+qqline(biomass3$below)
+qqnorm(sqrt(biomass3$below))
+qqline(sqrt(biomass3$below))
+qqnorm(log(biomass3$below))
+qqline(log(biomass3$below))
+```
+
+```{r}
+biomass3$above_log <- log(biomass3$above)
+biomass3$below_log <- log(biomass3$below)
+```
+
+```{r eval=FALSE, include=FALSE}
+# Does biomass differ between treatments 
+
+model1 <- lmerTest::lmer(above_log ~ (1|Rep), data = biomass3)
+
+model2 <- lmerTest::lmer(above_log ~  Treatment + (1|Rep), data = biomass3)
+
+model3 <- lmerTest::lmer(above_log ~  Treatment + Ratio + (1|Rep), data = biomass3)
+
+model4 <- lmerTest::lmer(above_log ~  Species + Treatment + Ratio + (1|Rep), data = biomass3)
+
+model5 <- lmerTest::lmer(above_log ~  Species * Treatment * Ratio + (1|Rep), data = biomass3)
+
+model6 <- lmerTest::lmer(above_log ~  Species * Ratio +  Treatment + (1|Rep), data = biomass3)
+
+AIC(model1, model2,model3,model4,model5,model6)
+
+anova(model5,model6)
+```
+
+
+```{r}
+model_Abio <- lmerTest::lmer(above_log ~ Treatment + Species * Ratio + (1|Rep), data = biomass3)
+anova(model_Abio)
+
+#Does biomass differ between species within each treatment
+emmeans(model_Abio, pairwise ~ Species | Treatment) 
+#Does biomass differ between planting ratios within each treatment
+emmeans(model_Abio, pairwise ~ Ratio | Treatment) 
+#Does biomass differ between species within ratio and treatment
+emmeans(model_Abio, pairwise ~ Species | Ratio * Treatment) 
+
+#Does biomass differ between Treatment
+emmeans(model_Abio, pairwise ~ Treatment | Ratio * Species) 
+
+```
+
+
+```{r}
+ggplot(biomass3, aes(x = Treatment, y = above_log, fill = Species)) +
+  geom_boxplot() +
+  facet_grid(Species ~ Ratio) +
+  theme_bw() +
+  labs(
+    title = "",
+    y = "Aboveground biomass (log)",
+    x = "Treatment"
+  )
+```
+
+```{r}
+# Estimated marginal means by selection category within each location
+emm <- emmeans(model_Abio, ~ Treatment | Ratio * Species)
+
+# Pairwise comparisons (Tukey)
+cld_df <- cld(emm,
+              adjust = "tukey",
+              Letters = letters,
+              alpha = 0.05) %>%
+  as.data.frame()
+
+# merge
+data2_letters <- left_join(biomass3, cld_df %>% dplyr::select(Treatment, Ratio, Species, .group),
+                           by = c("Treatment", "Ratio", "Species")) %>%
+  rename(letter = .group)
+
+y_positions <- data2_letters %>%
+  group_by(Treatment, Ratio, Species) %>%
+  summarise(y_pos = max(above_log, na.rm = TRUE) * 1.05,
+            .groups = "drop")
+  
+data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
+
+# simple box plot
+ggplot(biomass3, aes(x = Treatment, y = above_log, fill = Treatment)) +
+geom_boxplot() +
+facet_wrap(Species~Ratio)
+
+# box plot with significance indicated as letters
+ggplot(data2_letters,
+       aes(x = Treatment, y = above_log, fill = Species)) +
+  geom_boxplot() +
+  facet_grid(Species~Ratio) +
+  geom_text(aes(label = letter, y = y_pos+0.25),
+            vjust = 0,
+            size = 5,
+            angle = 45,
+            na.rm = TRUE) +
+  labs(x = "Treatment",
+       y = "Aboveground Biomass (log)",
+       title = "") +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+```{r}
+# Estimated marginal means by selection category within each location
+emm <- emmeans(model_Abio, pairwise ~ Treatment | Ratio * Species)
+
+# Pairwise comparisons (Tukey)
+cld_df <- cld(emm,
+              adjust = "tukey",
+              Letters = letters,
+              alpha = 0.05) %>%
+  as.data.frame()
+
+# merge
+data2_letters <- left_join(biomass3, cld_df %>% dplyr::select(Treatment, Ratio, Species, .group),
+                           by = c("Treatment", "Ratio", "Species")) %>%
+  rename(letter = .group)
+
+y_positions <- data2_letters %>%
+  group_by(Treatment, Ratio, Species) %>%
+  summarise(y_pos = max(above_log, na.rm = TRUE) * 1.05,
+            .groups = "drop")
+  
+data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
+
+# simple box plot
+ggplot(biomass3, aes(x = Treatment, y = above_log, fill = Treatment)) +
+geom_boxplot() +
+facet_wrap(Species~Ratio)
+
+# box plot with significance indicated as letters
+ggplot(data2_letters,
+       aes(x = Treatment, y = above_log, fill = Species)) +
+  geom_boxplot() +
+  facet_grid(Species~Ratio) +
+  geom_text(aes(label = letter, y = y_pos+0.25),
+            vjust = 0,
+            size = 5,
+            angle = 45,
+            na.rm = TRUE) +
+  labs(x = "Treatment",
+       y = "Aboveground Biomass (log)",
+       title = "") +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+## Belowground Biomass
+
+```{r}
+model_Bbio <- lmerTest::lmer(below_log ~ Treatment + Species * Ratio + (1|Rep), data = biomass3)
+anova(model_Bbio)
+
+#Does biomass differ between species within each treatment
+emmeans(model_Bbio, pairwise ~ Species | Treatment) 
+#Does biomass differ between planting ratios within each treatment
+emmeans(model_Bbio, pairwise ~ Ratio | Treatment) 
+#Does biomass differ between species within ratio and treatment
+emmeans(model_Bbio, pairwise ~ Species | Ratio * Treatment) 
+
+#Does biomass differ between Treatment
+emmeans(model_Bbio, pairwise ~ Treatment | Ratio * Species) 
+
+```
+
+
+```{r}
+ggplot(biomass3, aes(x = Treatment, y = below_log, fill = Species)) +
+  geom_boxplot() +
+  facet_grid(Species ~ Ratio) +
+  theme_bw() +
+  labs(
+    title = "",
+    y = "Aboveground biomass (log)",
+    x = "Treatment"
+  )
+```
+
+```{r}
+# Estimated marginal means by selection category within each location
+emm <- emmeans(model_Bbio, ~ Treatment | Ratio * Species)
+
+# Pairwise comparisons (Tukey)
+cld_df <- cld(emm,
+              adjust = "tukey",
+              Letters = letters,
+              alpha = 0.05) %>%
+  as.data.frame()
+
+# merge
+data2_letters <- left_join(biomass3, cld_df %>% dplyr::select(Treatment, Ratio, Species, .group),
+                           by = c("Treatment", "Ratio", "Species")) %>%
+  rename(letter = .group)
+
+y_positions <- data2_letters %>%
+  group_by(Treatment, Ratio, Species) %>%
+  summarise(y_pos = max(below_log, na.rm = TRUE) * 1.05,
+            .groups = "drop")
+  
+data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
+
+# simple box plot
+ggplot(biomass3, aes(x = Treatment, y = below_log, fill = Treatment)) +
+geom_boxplot() +
+facet_wrap(Species~Ratio)
+
+# box plot with significance indicated as letters
+ggplot(data2_letters,
+       aes(x = Treatment, y = below_log, fill = Species)) +
+  geom_boxplot() +
+  facet_grid(Species~Ratio) +
+  geom_text(aes(label = letter, y = y_pos+0.25),
+            vjust = 0,
+            size = 5,
+            angle = 45,
+            na.rm = TRUE) +
+  labs(x = "Treatment",
+       y = "Belowground Biomass (log)",
+       title = "") +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+```{r}
+# Estimated marginal means by selection category within each location
+emm <- emmeans(model_Bbio, pairwise ~ Treatment | Ratio * Species)
+
+# Pairwise comparisons (Tukey)
+cld_df <- cld(emm,
+              adjust = "tukey",
+              Letters = letters,
+              alpha = 0.05) %>%
+  as.data.frame()
+
+# merge
+data2_letters <- left_join(biomass3, cld_df %>% dplyr::select(Treatment, Ratio, Species, .group),
+                           by = c("Treatment", "Ratio", "Species")) %>%
+  rename(letter = .group)
+
+y_positions <- data2_letters %>%
+  group_by(Treatment, Ratio, Species) %>%
+  summarise(y_pos = max(below_log, na.rm = TRUE) * 1.05,
+            .groups = "drop")
+  
+data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
+
+# simple box plot
+ggplot(biomass3, aes(x = Treatment, y = below_log, fill = Treatment)) +
+geom_boxplot() +
+facet_wrap(Species~Ratio)
+
+# box plot with significance indicated as letters
+ggplot(data2_letters,
+       aes(x = Treatment, y = below_log, fill = Species)) +
+  geom_boxplot() +
+  facet_grid(Species~Ratio) +
+  geom_text(aes(label = letter, y = y_pos+0.25),
+            vjust = 0,
+            size = 5,
+            angle = 45,
+            na.rm = TRUE) +
+  labs(x = "Treatment",
+       y = "Belowground Biomass (log)",
+       title = "") +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+
+# Biomass Ratio
+
+```{r}
+biomass3$Abv_Blw <- biomass3$above / biomass3$below
+
+qqnorm(biomass3$Abv_Blw)
+qqline(biomass3$Abv_Blw)
+qqnorm(sqrt(biomass3$Abv_Blw))
+qqline(sqrt(biomass3$Abv_Blw))
+qqnorm(log(biomass3$Abv_Blw))
+qqline(log(biomass3$Abv_Blw))
+
+biomass3$Abv_Blw_log <- log(biomass3$Abv_Blw)
+```
+
+```{r}
+model_bio <- lmerTest::lmer(Abv_Blw_log ~ Treatment + Species * Ratio + (1|Rep), data = biomass3)
+anova(model_bio)
+
+#Does biomass differ between species within each treatment
+emmeans(model_bio, pairwise ~ Species | Treatment) 
+#Does biomass differ between planting ratios within each treatment
+emmeans(model_bio, pairwise ~ Ratio | Treatment) 
+#Does biomass differ between species within ratio and treatment
+emmeans(model_bio, pairwise ~ Species | Ratio * Treatment) 
+
+#Does biomass differ between Treatment
+emmeans(model_bio, pairwise ~ Treatment | Ratio * Species) 
+
+```
+
+```{r}
+# Estimated marginal means by selection category within each location
+emm <- emmeans(model_bio, ~ Treatment | Ratio * Species)
+
+# Pairwise comparisons (Tukey)
+cld_df <- cld(emm,
+              adjust = "tukey",
+              Letters = letters,
+              alpha = 0.05) %>%
+  as.data.frame()
+
+# merge
+data2_letters <- left_join(biomass3, cld_df %>% dplyr::select(Treatment, Ratio, Species, .group),
+                           by = c("Treatment", "Ratio", "Species")) %>%
+  rename(letter = .group)
+
+y_positions <- data2_letters %>%
+  group_by(Treatment, Ratio, Species) %>%
+  summarise(y_pos = max(Abv_Blw_log, na.rm = TRUE) * 1.05,
+            .groups = "drop")
+  
+data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
+
+# box plot with significance indicated as letters
+ggplot(data2_letters,
+       aes(x = Treatment, y = Abv_Blw_log, fill = Species)) +
+  geom_boxplot() +
+  facet_grid(Species~Ratio) +
+  geom_text(aes(label = letter, y = y_pos+0.25),
+            vjust = 0,
+            size = 5,
+            angle = 45,
+            na.rm = TRUE) +
+  labs(x = "Treatment",
+       y = "Belowground Biomass (log)",
+       title = "") +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+
