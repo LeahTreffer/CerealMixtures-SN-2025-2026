@@ -25,6 +25,7 @@ library(ggplot2)
 library(lmerTest)
 library(emmeans)
 library(multcomp)
+library(kableExtra)
 ```
 
 ```{r eval=FALSE, include=FALSE}
@@ -200,39 +201,60 @@ AIC(model1, model2,model3,model4,model5,model6)
 anova(model5,model6)
 ```
 
+## Aboveground Biomass 
 
 ```{r}
-model_Abio <- lmerTest::lmer(above_log ~ Treatment + Species * Ratio + (1|Rep), data = biomass3)
+model_Abio <- lmerTest::lmer(above_log ~ Treatment * Species * Ratio + (1|Rep), data = biomass3)
 anova(model_Abio)
 
 #Does biomass differ between species within each treatment
-emmeans(model_Abio, pairwise ~ Species | Treatment) 
+emmeans(model_Abio, pairwise ~ Species | Treatment * Ratio) 
 #Does biomass differ between planting ratios within each treatment
 emmeans(model_Abio, pairwise ~ Ratio | Treatment) 
 #Does biomass differ between species within ratio and treatment
 emmeans(model_Abio, pairwise ~ Species | Ratio * Treatment) 
-
 #Does biomass differ between Treatment
 emmeans(model_Abio, pairwise ~ Treatment | Ratio * Species) 
 
 ```
 
-
 ```{r}
-ggplot(biomass3, aes(x = Treatment, y = above_log, fill = Species)) +
-  geom_boxplot() +
-  facet_grid(Species ~ Ratio) +
-  theme_bw() +
-  labs(
-    title = "",
-    y = "Aboveground biomass (log)",
-    x = "Treatment"
-  )
+aov.table <- anova(model_Abio)
+table = flextable(data = aov.table %>%
+                    dplyr::select(NumDF, `Pr(>F)`) %>%
+                    filter(`Pr(>F)` < 0.05) %>%
+                    mutate(`Pr(>F)` = formatC(`Pr(>F)`, format = "e", digits = 2)) %>% 
+                    rownames_to_column(" ")) 
+bold(table, bold = TRUE, part = "header")
+
+# Parwise comparison of treatment
+emm <- emmeans(model_Abio, pairwise ~ Treatment | Ratio * Species) 
+
+pairs_df <- as.data.frame(emm[["contrasts"]]) # Extract pairwise results table
+# Keep only significant comparisons (p < 0.05)
+sig_pairs <- pairs_df %>%
+  filter(p.value < 0.06) %>%
+  arrange(p.value)
+# Print nicely formatted table
+kbl(sig_pairs, digits = 5, caption = "Significant pairwise comparisons of Treatment (Tukey-adjusted)") %>%
+  kable_classic(full_width = F, html_font = "Helvetica")
+
+# Parwise comparison of Species*Ratio
+emm_SpRat <- emmeans(model_Abio, pairwise ~ Species * Ratio | Treatment)
+
+pairs_df <- as.data.frame(emm_SpRat[["contrasts"]]) # Extract pairwise results table
+# Keep only significant comparisons (p < 0.05)
+sig_pairs <- pairs_df %>%
+  filter(p.value < 0.05) %>%
+  arrange(Treatment, contrast)
+# Print nicely formatted table
+kbl(sig_pairs, digits = 5, caption = "Significant pairwise comparisons of Species - Ratio interaction (Tukey-adjusted)") %>%
+  kable_classic(full_width = F, html_font = "Helvetica")
 ```
 
 ```{r}
 # Estimated marginal means by selection category within each location
-emm <- emmeans(model_Abio, ~ Treatment | Ratio * Species)
+emm <- emmeans(model_Abio, pairwise ~ Treatment | Ratio * Species) 
 
 # Pairwise comparisons (Tukey)
 cld_df <- cld(emm,
@@ -253,10 +275,6 @@ y_positions <- data2_letters %>%
   
 data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
 
-# simple box plot
-ggplot(biomass3, aes(x = Treatment, y = above_log, fill = Treatment)) +
-geom_boxplot() +
-facet_wrap(Species~Ratio)
 
 # box plot with significance indicated as letters
 ggplot(data2_letters,
@@ -281,10 +299,10 @@ ggplot(data2_letters,
 
 ```{r}
 # Estimated marginal means by selection category within each location
-emm <- emmeans(model_Abio, pairwise ~ Treatment | Ratio * Species)
+emm_SpRat <- emmeans(model_Abio, ~ Species * Ratio | Treatment)
 
 # Pairwise comparisons (Tukey)
-cld_df <- cld(emm,
+cld_df <- cld(emm_SpRat,
               adjust = "tukey",
               Letters = letters,
               alpha = 0.05) %>%
@@ -302,10 +320,6 @@ y_positions <- data2_letters %>%
   
 data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
 
-# simple box plot
-ggplot(biomass3, aes(x = Treatment, y = above_log, fill = Treatment)) +
-geom_boxplot() +
-facet_wrap(Species~Ratio)
 
 # box plot with significance indicated as letters
 ggplot(data2_letters,
@@ -331,40 +345,40 @@ ggplot(data2_letters,
 ## Belowground Biomass
 
 ```{r}
-model_Bbio <- lmerTest::lmer(below_log ~ Treatment + Species * Ratio + (1|Rep), data = biomass3)
+model_Bbio <- lmerTest::lmer(below_log ~ Treatment * Species * Ratio + (1|Rep), data = biomass3)
 anova(model_Bbio)
-
-#Does biomass differ between species within each treatment
-emmeans(model_Bbio, pairwise ~ Species | Treatment) 
-#Does biomass differ between planting ratios within each treatment
-emmeans(model_Bbio, pairwise ~ Ratio | Treatment) 
-#Does biomass differ between species within ratio and treatment
-emmeans(model_Bbio, pairwise ~ Species | Ratio * Treatment) 
-
-#Does biomass differ between Treatment
-emmeans(model_Bbio, pairwise ~ Treatment | Ratio * Species) 
-
 ```
 
 
 ```{r}
-ggplot(biomass3, aes(x = Treatment, y = below_log, fill = Species)) +
-  geom_boxplot() +
-  facet_grid(Species ~ Ratio) +
-  theme_bw() +
-  labs(
-    title = "",
-    y = "Aboveground biomass (log)",
-    x = "Treatment"
-  )
+aov.table <- anova(model_Bbio)
+table = flextable(data = aov.table %>%
+                    dplyr::select(NumDF, `Pr(>F)`) %>%
+                    filter(`Pr(>F)` < 0.05) %>%
+                    mutate(`Pr(>F)` = formatC(`Pr(>F)`, format = "e", digits = 2)) %>% 
+                    rownames_to_column(" ")) 
+bold(table, bold = TRUE, part = "header")
+
+# Parwise comparison of Species*Ratio
+emm_SpRat <- emmeans(model_Bbio, pairwise ~ Species * Ratio | Treatment)
+
+pairs_df <- as.data.frame(emm_SpRat[["contrasts"]]) # Extract pairwise results table
+# Keep only significant comparisons (p < 0.05)
+sig_pairs <- pairs_df %>%
+  filter(p.value < 0.05) %>%
+  arrange(Treatment, contrast)
+# Print nicely formatted table
+kbl(sig_pairs, digits = 5, caption = "Significant pairwise comparisons of Species - Ratio interaction (Tukey-adjusted)") %>%
+  kable_classic(full_width = F, html_font = "Helvetica")
 ```
+
 
 ```{r}
 # Estimated marginal means by selection category within each location
-emm <- emmeans(model_Bbio, ~ Treatment | Ratio * Species)
+emm_SpRat <- emmeans(model_Bbio, pairwise ~ Ratio * Species | Treatment)
 
 # Pairwise comparisons (Tukey)
-cld_df <- cld(emm,
+cld_df <- cld(emm_SpRat,
               adjust = "tukey",
               Letters = letters,
               alpha = 0.05) %>%
@@ -382,59 +396,6 @@ y_positions <- data2_letters %>%
   
 data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
 
-# simple box plot
-ggplot(biomass3, aes(x = Treatment, y = below_log, fill = Treatment)) +
-geom_boxplot() +
-facet_wrap(Species~Ratio)
-
-# box plot with significance indicated as letters
-ggplot(data2_letters,
-       aes(x = Treatment, y = below_log, fill = Species)) +
-  geom_boxplot() +
-  facet_grid(Species~Ratio) +
-  geom_text(aes(label = letter, y = y_pos+0.25),
-            vjust = 0,
-            size = 5,
-            angle = 45,
-            na.rm = TRUE) +
-  labs(x = "Treatment",
-       y = "Belowground Biomass (log)",
-       title = "") +
-  theme_bw() +
-  theme(
-    legend.position = "none",
-    strip.text = element_text(face = "bold"),
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
-```
-
-```{r}
-# Estimated marginal means by selection category within each location
-emm <- emmeans(model_Bbio, pairwise ~ Treatment | Ratio * Species)
-
-# Pairwise comparisons (Tukey)
-cld_df <- cld(emm,
-              adjust = "tukey",
-              Letters = letters,
-              alpha = 0.05) %>%
-  as.data.frame()
-
-# merge
-data2_letters <- left_join(biomass3, cld_df %>% dplyr::select(Treatment, Ratio, Species, .group),
-                           by = c("Treatment", "Ratio", "Species")) %>%
-  rename(letter = .group)
-
-y_positions <- data2_letters %>%
-  group_by(Treatment, Ratio, Species) %>%
-  summarise(y_pos = max(below_log, na.rm = TRUE) * 1.05,
-            .groups = "drop")
-  
-data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
-
-# simple box plot
-ggplot(biomass3, aes(x = Treatment, y = below_log, fill = Treatment)) +
-geom_boxplot() +
-facet_wrap(Species~Ratio)
 
 # box plot with significance indicated as letters
 ggplot(data2_letters,
@@ -474,24 +435,38 @@ biomass3$Abv_Blw_log <- log(biomass3$Abv_Blw)
 ```
 
 ```{r}
-model_bio <- lmerTest::lmer(Abv_Blw_log ~ Treatment + Species * Ratio + (1|Rep), data = biomass3)
+model_bio <- lmerTest::lmer(Abv_Blw_log ~ Treatment * Species * Ratio + (1|Rep), data = biomass3)
 anova(model_bio)
+```
 
-#Does biomass differ between species within each treatment
-emmeans(model_bio, pairwise ~ Species | Treatment) 
-#Does biomass differ between planting ratios within each treatment
-emmeans(model_bio, pairwise ~ Ratio | Treatment) 
-#Does biomass differ between species within ratio and treatment
-emmeans(model_bio, pairwise ~ Species | Ratio * Treatment) 
+```{r}
+aov.table <- anova(model_bio)
+table = flextable(data = aov.table %>%
+                    dplyr::select(NumDF, `Pr(>F)`) %>%
+                    filter(`Pr(>F)` < 0.05) %>%
+                    mutate(`Pr(>F)` = formatC(`Pr(>F)`, format = "e", digits = 2)) %>% 
+                    rownames_to_column(" ")) 
+bold(table, bold = TRUE, part = "header")
 
-#Does biomass differ between Treatment
-emmeans(model_bio, pairwise ~ Treatment | Ratio * Species) 
+# Parwise comparison of Treatment
+emm <- emmeans(model_bio, pairwise ~ Treatment | Species * Ratio)
+
+pairs_df <- as.data.frame(emm[["contrasts"]]) # Extract pairwise results table
+# Keep only significant comparisons (p < 0.05)
+sig_pairs <- pairs_df %>%
+  filter(p.value < 0.05) %>%
+  arrange(Species, Ratio)
+# Print nicely formatted table
+kbl(sig_pairs, digits = 5, caption = "Significant pairwise comparisons of Treatment (Tukey-adjusted)") %>%
+  kable_classic(full_width = F, html_font = "Helvetica")
+
+# Parwise comparison of Species
 
 ```
 
 ```{r}
 # Estimated marginal means by selection category within each location
-emm <- emmeans(model_bio, ~ Treatment | Ratio * Species)
+emm <- emmeans(model_bio, ~ Treatment | Species * Ratio)
 
 # Pairwise comparisons (Tukey)
 cld_df <- cld(emm,
