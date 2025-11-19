@@ -26,6 +26,8 @@ library(lmerTest)
 library(emmeans)
 library(multcomp)
 library(kableExtra)
+library(flextable)
+library(tibble)
 ```
 
 ```{r eval=FALSE, include=FALSE}
@@ -419,7 +421,7 @@ ggplot(data2_letters,
 ```
 
 
-# Biomass Ratio
+## Biomass Ratio
 
 ```{r}
 biomass3$Abv_Blw <- biomass3$above / biomass3$below
@@ -507,5 +509,308 @@ ggplot(data2_letters,
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 ```
+
+
+## Total Biomass
+
+```{r}
+biomass3$tot_biomass <- biomass3$above + biomass3$below
+
+qqnorm(biomass3$tot_biomass)
+qqline(biomass3$tot_biomass)
+qqnorm(sqrt(biomass3$tot_biomass))
+qqline(sqrt(biomass3$tot_biomass))
+qqnorm(log(biomass3$tot_biomass))
+qqline(log(biomass3$tot_biomass))
+
+biomass3$totbiomass_log <- log(biomass3$tot_biomass)
+```
+
+```{r}
+model_totbio <- lmerTest::lmer(totbiomass_log ~ Treatment * Species * Ratio + (1|Rep), data = biomass3)
+anova(model_totbio)
+```
+
+```{r}
+aov.table <- anova(model_totbio)
+table = flextable(data = aov.table %>%
+                    dplyr::select(NumDF, `Pr(>F)`) %>%
+                    filter(`Pr(>F)` < 0.05) %>%
+                    mutate(`Pr(>F)` = formatC(`Pr(>F)`, format = "e", digits = 2)) %>% 
+                    rownames_to_column(" ")) 
+bold(table, bold = TRUE, part = "header")
+
+# Parwise comparison of Species Ratio Interaction
+emm <- emmeans(model_totbio, pairwise ~ Species * Ratio | Treatment)
+
+pairs_df <- as.data.frame(emm[["contrasts"]]) # Extract pairwise results table
+# Keep only significant comparisons (p < 0.05)
+sig_pairs <- pairs_df %>%
+  filter(p.value < 0.05) %>%
+  arrange(Treatment)
+# Print nicely formatted table
+kbl(sig_pairs, digits = 5, caption = "Significant pairwise comparisons of Species * Ratio Interaction (Tukey-adjusted)") %>%
+  kable_classic(full_width = F, html_font = "Helvetica")
+
+```
+
+```{r}
+# Estimated marginal means by selection category within each location
+emm <- emmeans(model_totbio, ~ Species * Ratio | Treatment)
+
+# Pairwise comparisons (Tukey)
+cld_df <- cld(emm,
+              adjust = "tukey",
+              Letters = letters,
+              alpha = 0.05) %>%
+  as.data.frame()
+
+# merge
+data2_letters <- left_join(biomass3, cld_df %>% dplyr::select(Treatment, Ratio, Species, .group),
+                           by = c("Treatment", "Ratio", "Species")) %>%
+  rename(letter = .group)
+
+y_positions <- data2_letters %>%
+  group_by(Treatment, Ratio, Species) %>%
+  summarise(y_pos = max(totbiomass_log, na.rm = TRUE) * 1.05,
+            .groups = "drop")
+  
+data2_letters <- left_join(data2_letters, y_positions, by = c("Treatment", "Ratio", "Species"))
+
+# box plot with significance indicated as letters
+ggplot(data2_letters,
+       aes(x = Treatment, y = totbiomass_log, fill = Species)) +
+  geom_boxplot() +
+  facet_grid(Species~Ratio) +
+  geom_text(aes(label = letter, y = y_pos+0.2),
+            vjust = 0,
+            size = 5,
+            angle = 45,
+            na.rm = TRUE) +
+  labs(x = "Treatment",
+       y = "Total Biomass (log)",
+       title = "") +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    strip.text = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+
+
+
+# Relative Yield
+
+```{r}
+# Calculate monoculture means
+mono <- biomass3 %>%
+  group_by(Treatment) %>%
+  summarise(barley_mono = mean(tot_biomass[Ratio=="4:0"]),
+            wheat_mono = mean(tot_biomass[Ratio=="0:4"]))
+```
+
+```{r}
+data <- biomass3 %>%
+  dplyr::select("Plot","Ratio","Treatment","Rep","Species","tot_biomass")%>%
+  pivot_wider(names_from = Species, values_from = tot_biomass)%>%
+  left_join(mono, by="Treatment") %>%
+  mutate(RY_barley = barley / barley_mono,
+         RY_wheat = wheat / wheat_mono,
+         RYT = RY_barley + RY_wheat)
+```
+
+```{r}
+
+df_long <- data %>%
+  pivot_longer(
+    cols = c(RY_barley, RY_wheat),
+    names_to = "Species",
+    values_to = "RY"
+  )
+
+ggplot(df_long, aes(
+  x = Ratio,
+  y = RY,
+  color = Species
+)) +
+  geom_point(size = 3) +
+  geom_line(aes(group = interaction(Species, Treatment, Rep))) +
+  labs(
+    x = "Proportion Species 1",
+    y = "Relative Yield (RY)",
+    color = "Species"
+  ) +
+  theme_minimal()+
+  geom_hline(yintercept = 1, linetype = "dashed")+
+  facet_wrap(~ Treatment)
+
+```
+
+## Replacement Series 
+
+```{r}
+# expected yield
+data2 <- data %>%
+  mutate(Prop_barley = case_when(
+    Ratio == '4:0' ~ 1,
+    Ratio == '3:1' ~ 0.75,
+    Ratio == '2:2' ~ 0.5,
+    Ratio == '1:3' ~ 0.25,
+    Ratio == '0:4' ~ 0
+  ))%>%
+  mutate(Prop_wheat = case_when(
+    Ratio == '4:0' ~ 0,
+    Ratio == '3:1' ~ 0.25,
+    Ratio == '2:2' ~ 0.5,
+    Ratio == '1:3' ~ 0.75,
+    Ratio == '0:4' ~ 1
+  ))%>%
+  mutate(
+    expected_barley = Prop_barley * barley_mono,
+    expected_wheat = Prop_wheat * wheat_mono
+  )
+
+```
+
+```{r}
+plot_df <- data2 %>%
+  dplyr::select(Treatment, Ratio, barley, wheat, expected_barley, expected_wheat) %>%
+  pivot_longer(
+    cols = c(barley, wheat, expected_barley, expected_wheat),
+    names_to = "Type",
+    values_to = "Yield"
+  ) %>%
+  mutate(
+    Species = ifelse(str_detect(Type, "barley"), "barley", "wheat"),
+    LineType = ifelse(str_detect(Type, "^expected"), "Expected", "Observed")
+  )
+```
+
+```{r}
+treatment_labels <- c(
+  "1" = "Treatment 1",
+  "2" = "Treatment 2",
+  "3" = "Treatment 3"
+)
+
+ggplot(plot_df, aes(x = Ratio, y = Yield,
+                    linetype = LineType,
+                    group = interaction(Species, LineType))) +
+  
+  geom_line(
+    data = subset(plot_df, LineType == "Expected"),
+    aes(linetype = LineType),
+    color = "black",
+    linewidth = 1
+  ) +
+  geom_line(
+    data = subset(plot_df, LineType == "Observed"),
+    aes(color = Species),
+    linewidth = 1.2
+  ) +
+  geom_point(
+    data = subset(plot_df, LineType == "Observed"),
+    aes(color = Species),
+    size = 2
+  ) +
+  
+  facet_wrap(~ Treatment, labeller = labeller(Treatment = treatment_labels)) +
+  
+  scale_linetype_manual(values = c(
+    "Observed" = "solid",
+    "Expected" = "dashed"
+  )) +
+  
+  labs(
+    x = "Planting (Barley : Wheat)",
+    y = "Total Biomass (g)",
+    color = "Species",
+    linetype = "Yield Type"
+  ) +
+  
+  theme_minimal(base_size = 14) +
+  theme(
+    strip.text = element_text(size=20, face = "bold"),
+    panel.background = element_blank(),   # removes gray
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
+
+```{r}
+obs_summary <- plot_df %>%
+  filter(LineType == "Observed") %>%
+  group_by(Treatment, Ratio, Species) %>%
+  summarise(
+    mean_yield = mean(Yield, na.rm = TRUE),
+    se = sd(Yield, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+```
+
+```{r}
+
+
+ggplot() +
+  # Expected lines
+  geom_line(
+    data = subset(plot_df, LineType == "Expected"),
+    aes(x = factor(Ratio, levels = c("0:4","1:3","2:2","3:1","4:0")), y = Yield, group = Species),
+    linetype = "dashed",
+    color = "black",
+    linewidth = 1
+  ) +
+  
+  # Ribbon for SE
+  geom_ribbon(
+    data = obs_summary,
+    aes(x = Ratio, ymin = mean_yield - se, ymax = mean_yield + se, fill = Species),
+    alpha = 0.2
+  ) +
+
+  # Observed mean line
+  geom_line(
+    data = obs_summary,
+    aes(x = Ratio, y = mean_yield, color = Species, group = Species),
+    linewidth = 1.3
+  ) +
+
+  geom_point(
+    data = obs_summary,
+    aes(x = Ratio, y = mean_yield, color = Species),
+    size = 3
+  ) +
+
+  facet_wrap(~ Treatment, labeller = labeller(Treatment = treatment_labels)) +
+
+  scale_color_manual(values = c("barley" = "#1f77b4", "wheat" = "#d62728")) +
+  scale_fill_manual(values = c("barley" = "#1f77b4", "wheat" = "#d62728")) +
+
+  labs(
+    x = "Planting (Barley : Wheat)",
+    y = "Total Biomass (g)",
+    color = "Species",
+    fill = "Species"
+  ) +
+
+  theme_minimal(base_size = 14) +
+  theme(
+    strip.text = element_text(size=20, face = "bold"),
+    panel.background = element_blank(),   # removes gray
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+
+
+
+
+
+
+
 
 
