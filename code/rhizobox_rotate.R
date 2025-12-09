@@ -31,6 +31,7 @@ crop_and_rotate <- function(x, directory = NULL, display_scale = 0.25){
   cy_original <- dims_orig[[2]]/2
   
   rgb_im <- EBImage::rgbImage(img[,,1], img[,,2], img[,,3])
+  
   img_display <- resize(rgb_im, w = dims_orig[1] * display_scale,
                         h = dims_orig[2] * display_scale)
   dims_display <- dim(img_display)
@@ -74,7 +75,6 @@ crop_and_rotate <- function(x, directory = NULL, display_scale = 0.25){
   bottom_angle <- atan2(pts$y[3] - pts$y[4], pts$x[3] - pts$x[4])
   left_side_angle <- atan2(pts$y[4] - pts$y[1], pts$x[4] - pts$x[1]) - pi/2
   right_side_angle <- atan2(pts$y[3] - pts$y[2], pts$x[3] - pts$x[2]) - pi/2
-
   
   # Average angles with weird math
   angles <- c(top_angle, bottom_angle, left_side_angle, right_side_angle)
@@ -115,7 +115,6 @@ crop_and_rotate <- function(x, directory = NULL, display_scale = 0.25){
   # CR = cropped, rotated
   img_name <- paste(path_to_use, no_suffix, "_CR_", create_date_time, ".tif", sep = "")
   cat("Attempting to save to:", img_name, "\n")
-
   print(path_to_use)
   print(no_suffix)
   print(create_date_time)
@@ -123,9 +122,15 @@ crop_and_rotate <- function(x, directory = NULL, display_scale = 0.25){
   
   # set color mode so images are written in correct stack order
   colorMode(img_cropped) <- 2
-  writeImage(img_cropped, img_name)
+  # writeImage(img_cropped, img_name, bits.per.sample = 8)
+  img_array <- imageData(img_cropped)
+  # dims_array <- dim(img_array)
+  # img_array <- img_array * 255          # Scale 0-1 → 0-255
+  # img_array <- array(as.raw(img_array), dim = dims_array)  # double → integer
+  # 
+  # Write with LZW compression
+  
+  writeTIFF(img_array, img_name, bits.per.sample = 8, compression = "LZW", reduce = TRUE)
   rm(img_cropped)
   gc()
-
 }
-
